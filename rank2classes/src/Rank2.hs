@@ -5,15 +5,16 @@
 -- This will bring into scope the standard classes 'Functor', 'Applicative', 'Foldable', and 'Traversable', but with a
 -- @Rank2.@ prefix and a twist that their methods operate on a heterogenous collection. The same property is shared by
 -- the two less standard classes 'Apply' and 'Distributive'.
-{-# LANGUAGE InstanceSigs, KindSignatures, Rank2Types, ScopedTypeVariables, PolyKinds, DefaultSignatures #-}
+{-# LANGUAGE InstanceSigs, KindSignatures, Rank2Types, ScopedTypeVariables, PolyKinds, DefaultSignatures, TypeFamilies, TypeInType, TypeOperators #-}
 module Rank2 (
 -- * Rank 2 classes
    Functor(..), Apply(..), Applicative(..),
    Foldable(..), Traversable(..), Distributive(..), DistributiveTraversable(..), distributeJoin,
+   Element, ElementKind, MonoFunctor(..),
 -- * Rank 2 data types
    Compose(..), Empty(..), Only(..), Identity(..), Product(..), Arrow(..),
 -- * Method synonyms and helper functions
-   ap, fmap, liftA3, liftA4, liftA5,
+   ap, fmap, liftA4, liftA5,
    fmapTraverse, liftA2Traverse1, liftA2Traverse2, liftA2TraverseBoth,
    cotraverse, cotraverseTraversable)
 where
@@ -24,6 +25,7 @@ import qualified Data.Foldable as Rank1
 import qualified Data.Traversable as Rank1
 import Data.Monoid (Monoid(..), (<>))
 import Data.Functor.Compose (Compose(..))
+import Data.Kind (type (*))
 
 import Prelude hiding (Foldable(..), Traversable(..), Functor(..), Applicative(..), (<$>), fst, snd)
 
@@ -104,6 +106,15 @@ class Functor g => DistributiveTraversable (g :: (k -> *) -> *) where
                                         (forall x. f1 (f2 x) -> f x) -> f1 (g f2) -> g f
    distributeWithTraversable = distributeWith
 
+type family Element a :: k -> *
+type family ElementKind a :: k
+
+-- | A monomorphic version of Functor
+class MonoFunctor g where
+   omap :: (forall (a :: ElementKind g). Element g a -> Element g a) -> g -> g
+   default omap :: (g ~ g' p) => Functor g' => (forall a. p a -> p a) -> g -> g
+   omap = fmap
+
 -- | A variant of 'distribute' convenient with 'Rank1.Monad' instances
 distributeJoin :: (Distributive g, Rank1.Monad f) => f (g f) -> g f
 distributeJoin = distributeWith Rank1.join
@@ -125,8 +136,7 @@ liftA2Traverse2 f x y = liftA2 (\x' y' -> f x' (getCompose y')) x (distributeTra
 -- | Like 'liftA2', but traverses over both its arguments
 liftA2TraverseBoth :: (Apply f, DistributiveTraversable f, Rank1.Traversable g1, Rank1.Traversable g2) =>
                       (forall a. g1 (t a) -> g2 (u a) -> v a) -> g1 (f t) -> g2 (f u) -> f v
-liftA2TraverseBoth f x y = liftA2 applyCompose (distributeTraversable x) (distributeTraversable y)
-   where applyCompose x' y' = f (getCompose x') (getCompose y')
+liftA2TraverseBoth f x y = liftA2 (\x' y' -> f (getCompose x') (getCompose y')) (distributeTraversable x) (distributeTraversable y)
 
 -- | Equivalent of 'Rank1.cotraverse' for rank 2 data types 
 cotraverse :: (Distributive g, Rank1.Functor f) => (forall i. f (a i) -> b i) -> f (g a) -> g b
